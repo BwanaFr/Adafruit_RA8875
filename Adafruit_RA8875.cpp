@@ -38,30 +38,12 @@
 #include <EEPROM.h>
 #endif
 
-#include <SPI.h>
-
-#if defined (ARDUINO_ARCH_ARC32)
+#if defined (ESP32)
+  uint32_t spi_speed = 40000000;  /*!< 40MHz */
+#elif defined (ARDUINO_ARCH_ARC32)
   uint32_t spi_speed = 12000000;  /*!< 12MHz */
 #else
   uint32_t spi_speed = 4000000;   /*!< 4MHz */
-#endif
-
-// If the SPI library has transaction support, these functions
-// establish settings and protect from interference from other
-// libraries.  Otherwise, they simply do nothing.
-#ifdef SPI_HAS_TRANSACTION
-    static inline void spi_begin(void) __attribute__((always_inline));
-    static inline void spi_begin(void) {
-        // max speed!
-        SPI.beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
-    }
-    static inline void spi_end(void) __attribute__((always_inline));
-    static inline void spi_end(void) {
-        SPI.endTransaction();
-    }
-#else
-    #define spi_begin()   ///< Create dummy Macro Function
-    #define spi_end()     ///< Create dummy Macro Function
 #endif
 
 
@@ -70,12 +52,38 @@
       Constructor for a new RA8875 instance
 
       @param CS  Location of the SPI chip select pin
-      @param RST Location of the reset pin
+      @param RST Location of the reset pin (0xFF if not used)
 */
 /**************************************************************************/
-Adafruit_RA8875::Adafruit_RA8875(uint8_t CS, uint8_t RST) : Adafruit_GFX(800, 480) {
+Adafruit_RA8875::Adafruit_RA8875(uint8_t CS, uint8_t RST) : Adafruit_GFX(800, 480), _spi(nullptr) {
   _cs = CS;
   _rst = RST;
+}
+
+
+/**************************************************************************/
+/*!
+      Constructor for a new RA8875 instance
+
+      @param spi Pointer to SPI object to be used
+      @param CS  Location of the SPI chip select pin
+      @param RST Location of the reset pin (0xFF if not used)
+*/
+/**************************************************************************/
+Adafruit_RA8875::Adafruit_RA8875(SPIClass* spi, uint8_t CS, uint8_t RST) : Adafruit_GFX(800, 480), _spi(spi) {
+  _cs = CS;
+  _rst = RST;
+}
+
+/**************************************************************************/
+/*!
+      Sets the SPI to be used. Must be called before begin() method
+
+      @param spi Pointer to SPI object to be used
+*/
+/**************************************************************************/
+void Adafruit_RA8875::setSPI(SPIClass* spi) {
+  _spi = spi;
 }
 
 /**************************************************************************/
@@ -116,14 +124,20 @@ boolean Adafruit_RA8875::begin(enum RA8875sizes s) {
   _rotation = 0;
   pinMode(_cs, OUTPUT);
   digitalWrite(_cs, HIGH);
-  pinMode(_rst, OUTPUT);
+  if(_rst != 0xFF) {
+    pinMode(_rst, OUTPUT);
 
-  digitalWrite(_rst, LOW);
-  delay(100);
-  digitalWrite(_rst, HIGH);
-  delay(100);
+    digitalWrite(_rst, LOW);
+    delay(100);
+    digitalWrite(_rst, HIGH);
+    delay(100);
+  }
 
-  SPI.begin();
+  if(_spi == nullptr){
+    _spi = &SPI;
+    _spi->begin();
+  }
+
 
 #ifdef SPI_HAS_TRANSACTION
     #if defined (ARDUINO_ARCH_ARC32)
@@ -133,8 +147,8 @@ boolean Adafruit_RA8875::begin(enum RA8875sizes s) {
     #endif
 #else
     #ifdef __AVR__
-        SPI.setClockDivider(SPI_CLOCK_DIV128);
-        SPI.setDataMode(SPI_MODE0);
+        _spi->setClockDivider(SPI_CLOCK_DIV128);
+        _spi->setDataMode(SPI_MODE0);
     #endif
 #endif
 
@@ -155,7 +169,7 @@ boolean Adafruit_RA8875::begin(enum RA8875sizes s) {
     #endif
 #else
     #ifdef __AVR__
-        SPI.setClockDivider(SPI_CLOCK_DIV4);
+        _spi->setClockDivider(SPI_CLOCK_DIV4);
     #endif
 #endif
 
@@ -585,10 +599,10 @@ void Adafruit_RA8875::setXY(uint16_t x, uint16_t y) {
 /**************************************************************************/
 void Adafruit_RA8875::pushPixels(uint32_t num, uint16_t p) {
   digitalWrite(_cs, LOW);
-  SPI.transfer(RA8875_DATAWRITE);
+  _spi->transfer(RA8875_DATAWRITE);
   while (num--) {
-    SPI.transfer(p >> 8);
-    SPI.transfer(p);
+    _spi->transfer(p >> 8);
+    _spi->transfer(p);
   }
   digitalWrite(_cs, HIGH);
 }
@@ -659,9 +673,9 @@ void Adafruit_RA8875::drawPixel(int16_t x, int16_t y, uint16_t color)
   writeReg(RA8875_CURV1, y >> 8);
   writeCommand(RA8875_MRWC);
   digitalWrite(_cs, LOW);
-  SPI.transfer(RA8875_DATAWRITE);
-  SPI.transfer(color >> 8);
-  SPI.transfer(color);
+  _spi->transfer(RA8875_DATAWRITE);
+  _spi->transfer(color >> 8);
+  _spi->transfer(color);
   digitalWrite(_cs, HIGH);
 }
 
@@ -693,9 +707,9 @@ void Adafruit_RA8875::drawPixels(uint16_t * p, uint32_t num, int16_t x, int16_t 
 
     writeCommand(RA8875_MRWC);
     digitalWrite(_cs, LOW);
-    SPI.transfer(RA8875_DATAWRITE);
+    _spi->transfer(RA8875_DATAWRITE);
     while (num--) {
-        SPI.transfer16(*p++);
+        _spi->transfer16(*p++);
     }
     digitalWrite(_cs, HIGH);
 }
@@ -1658,10 +1672,15 @@ uint8_t  Adafruit_RA8875::readReg(uint8_t reg)
 void  Adafruit_RA8875::writeData(uint8_t d)
 {
   digitalWrite(_cs, LOW);
-    spi_begin();
-  SPI.transfer(RA8875_DATAWRITE);
-  SPI.transfer(d);
-    spi_end();
+  #ifdef SPI_HAS_TRANSACTION
+    // max speed!
+    _spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
+  #endif
+  _spi->transfer(RA8875_DATAWRITE);
+  _spi->transfer(d);
+  #ifdef SPI_HAS_TRANSACTION
+    _spi->endTransaction();
+  #endif
   digitalWrite(_cs, HIGH);
 }
 
@@ -1675,11 +1694,16 @@ void  Adafruit_RA8875::writeData(uint8_t d)
 uint8_t  Adafruit_RA8875::readData(void)
 {
   digitalWrite(_cs, LOW);
-    spi_begin();
+  #ifdef SPI_HAS_TRANSACTION
+    // max speed!
+    _spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
+  #endif
 
-  SPI.transfer(RA8875_DATAREAD);
-  uint8_t x = SPI.transfer(0x0);
-    spi_end();
+  _spi->transfer(RA8875_DATAREAD);
+  uint8_t x = _spi->transfer(0x0);
+  #ifdef SPI_HAS_TRANSACTION
+    _spi->endTransaction();
+  #endif
 
   digitalWrite(_cs, HIGH);
   return x;
@@ -1695,11 +1719,16 @@ uint8_t  Adafruit_RA8875::readData(void)
 void  Adafruit_RA8875::writeCommand(uint8_t d)
 {
   digitalWrite(_cs, LOW);
-    spi_begin();
+  #ifdef SPI_HAS_TRANSACTION
+    // max speed!
+    _spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
+  #endif
 
-  SPI.transfer(RA8875_CMDWRITE);
-  SPI.transfer(d);
-    spi_end();
+  _spi->transfer(RA8875_CMDWRITE);
+  _spi->transfer(d);
+  #ifdef SPI_HAS_TRANSACTION
+    _spi->endTransaction();
+  #endif
 
   digitalWrite(_cs, HIGH);
 }
@@ -1714,10 +1743,15 @@ void  Adafruit_RA8875::writeCommand(uint8_t d)
 uint8_t  Adafruit_RA8875::readStatus(void)
 {
   digitalWrite(_cs, LOW);
-    spi_begin();
-  SPI.transfer(RA8875_CMDREAD);
-  uint8_t x = SPI.transfer(0x0);
-    spi_end();
+  #ifdef SPI_HAS_TRANSACTION
+    // max speed!
+    _spi->beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
+  #endif
+  _spi->transfer(RA8875_CMDREAD);
+  uint8_t x = _spi->transfer(0x0);
+  #ifdef SPI_HAS_TRANSACTION
+    _spi->endTransaction();
+  #endif
 
   digitalWrite(_cs, HIGH);
   return x;

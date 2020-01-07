@@ -38,6 +38,8 @@
 
 #include <Adafruit_GFX.h>
 
+#include <SPI.h>
+
 #ifndef _ADAFRUIT_RA8875_H
 #define _ADAFRUIT_RA8875_H ///< File has been included
 
@@ -131,7 +133,10 @@ typedef struct //Matrix
 /**************************************************************************/
 class Adafruit_RA8875 : public Adafruit_GFX {
  public:
-  Adafruit_RA8875(uint8_t cs, uint8_t rst);
+  Adafruit_RA8875(SPIClass* spi, uint8_t cs, uint8_t rst = 0xFF);
+  Adafruit_RA8875(uint8_t cs, uint8_t rst = 0xFF);
+  
+  void setSPI(SPIClass* spi);
   
   boolean begin(enum RA8875sizes s);
   void    softReset(void);
@@ -272,6 +277,7 @@ class Adafruit_RA8875 : public Adafruit_GFX {
   uint8_t _rotation;
   uint8_t _voffset;
   enum RA8875sizes _size;
+  SPIClass* _spi;
 };
 
 // Colors (RGB565)
