@@ -164,6 +164,8 @@ class Adafruit_RA8875 : public Adafruit_GFX {
   void    drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color);
   void    drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
   
+  void    drawBitMap(uint16_t * p, int16_t x1, int16_t x2, int16_t y1, int16_t y2);
+
   /* HW accelerated wrapper functions (override Adafruit_GFX prototypes) */
   void    fillScreen(uint16_t color);
   void    drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);

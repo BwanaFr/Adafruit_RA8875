@@ -39,7 +39,7 @@
 #endif
 
 #if defined (ESP32)
-  uint32_t spi_speed = 40000000;  /*!< 40MHz */
+  uint32_t spi_speed = 20000000;  /*!< 40MHz */
 #elif defined (ARDUINO_ARCH_ARC32)
   uint32_t spi_speed = 12000000;  /*!< 12MHz */
 #else
@@ -140,7 +140,7 @@ boolean Adafruit_RA8875::begin(enum RA8875sizes s) {
 
 
 #ifdef SPI_HAS_TRANSACTION
-    #if defined (ARDUINO_ARCH_ARC32)
+    #if defined (ARDUINO_ARCH_ARC32) || defined(ESP32)
         spi_speed = 2000000;
     #else
         spi_speed = 125000;
@@ -162,7 +162,7 @@ boolean Adafruit_RA8875::begin(enum RA8875sizes s) {
   initialize();
 
 #ifdef SPI_HAS_TRANSACTION
-    #if defined (ARDUINO_ARCH_ARC32)
+    #if defined (ARDUINO_ARCH_ARC32) || defined(ESP32)
         spi_speed = 12000000L;
     #else
         spi_speed = 4000000L;
@@ -711,6 +711,46 @@ void Adafruit_RA8875::drawPixels(uint16_t * p, uint32_t num, int16_t x, int16_t 
     while (num--) {
         _spi->transfer16(*p++);
     }
+    digitalWrite(_cs, HIGH);
+}
+
+/**************************************************************************/
+/*!
+      Draws a bitmap on the display
+
+      @param p Pointer to colors
+      @param x1 Starting x location of bitmap
+      @param x2 Ending x location of bitmap
+      @param y1 Starting y location of bitmap
+      @param y2 Ending y location of bitmap
+*/
+/**************************************************************************/
+void Adafruit_RA8875::drawBitMap(uint16_t * p, int16_t x1, int16_t x2, int16_t y1, int16_t y2)
+{
+    writeReg(RA8875_CURH0, x1);
+    writeReg(RA8875_CURH1, x1 >> 8);
+    writeReg(RA8875_CURV0, y1);
+    writeReg(RA8875_CURV1, y1 >> 8);
+    //Set active window
+    //X
+  	writeReg(RA8875_HSAW0,      x1 & 0xFF);
+		writeReg(RA8875_HSAW0 + 1,  x1 >> 8);   
+		writeReg(RA8875_HEAW0,      x2 & 0xFF);
+		writeReg(RA8875_HEAW0 + 1,  x2 >> 8);
+		// Y 
+		writeReg(RA8875_VSAW0,      y1 & 0xFF);
+		writeReg(RA8875_VSAW0 + 1,  y1 >> 8); 
+		writeReg(RA8875_VEAW0,      y2 & 0xFF); 
+		writeReg(RA8875_VEAW0 + 1,  y2 >> 8);
+    uint32_t xLen = (x2 - x1 + 1) * (y2 - y1 + 1);
+    writeCommand(RA8875_MRWC);
+    digitalWrite(_cs, LOW);
+    SPI.beginTransaction(SPISettings(spi_speed, MSBFIRST, SPI_MODE0));
+    _spi->transfer(RA8875_DATAWRITE);
+    while (xLen--) {
+        _spi->transfer16(*p++);
+    }
+    SPI.endTransaction();
     digitalWrite(_cs, HIGH);
 }
 
